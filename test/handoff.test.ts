@@ -166,6 +166,22 @@ describe("stripAttributionLines", () => {
     }
   });
 
+  it("finds a trailer after an escaped line break in a one-line commit message, or after a dot, slash or equals sign", () => {
+    const cases: Array<[string, string]> = [
+      [
+        '- Run git commit -m "Fix login\\n\\nCo-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>" for each fix',
+        '- Run git commit -m "Fix login  [attribution removed]" for each fix',
+      ],
+      ["- Set trailer=Generated-by: Claude in the config", "- Set trailer=[attribution removed] in the config"],
+      ["- Footer text.Co-Authored-By: Claude <x@y.z>", "- Footer text.[attribution removed]"],
+    ];
+    for (const [line, expected] of cases) {
+      const out = stripAttributionLines(line);
+      expect(out).not.toContain("noreply@anthropic.com");
+      expect(out).toBe(expected);
+    }
+  });
+
   it("drops a line that is only a trailer, whatever its decoration", () => {
     expect(stripAttributionLines("- `Co-Authored-By=ChatGPT`\n> Co-Authored-By Claude <x@y.z>\nkept")).toBe("kept");
   });

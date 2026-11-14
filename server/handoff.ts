@@ -73,8 +73,8 @@ const TRAILER_AT_START = new RegExp(
   String.raw`^${DECORATION}(?:(?:commit\s+)?trailers?\s{0,5}[:-]\s{0,5})?[\s*_\x60|]{0,20}${TRAILER_LABEL}[\s*_\x60|]{0,20}[:|]`,
   "i",
 );
-/** Not the tail of a longer word, path, flag or assignment. */
-const STANDS_ALONE = String.raw`(?<![\w./=-])`;
+/** Not the tail of a longer word or flag. A path or file name is kept by LABEL_END and the delimiter rule instead. */
+const STANDS_ALONE = String.raw`(?<![\w-])`;
 /** The end of a label, so `co-authored-by-foo` and `assisted-bylaws` are other words. */
 const LABEL_END = String.raw`(?![\w-])`;
 /** The hyphen- or underscore-joined label, which prose does not use ("co-authored-by", never "assisted by Bob"). */
@@ -111,11 +111,12 @@ const NOT_A_VALUE_LINE = /^\s*(?:#|\||[-*+] )/;
 const HAS_WORDS = /[\p{L}\p{N}]/u;
 
 function foldForMatch(line: string): string {
-  // NFKC folds fullwidth colons and similar; the hyphen class folds Unicode hyphens; backslashes escape markdown.
+  // NFKC folds fullwidth colons and similar; the hyphen class folds Unicode hyphens; backslashes escape markdown, and a \n or \t inside a one-line commit message is a line break.
   return line
     .normalize("NFKC")
-    .replace(/[­\p{Default_Ignorable_Code_Point}]/gu, "")
-    .replace(/[‐-―−]/g, "-")
+    .replace(/[\u00AD\p{Default_Ignorable_Code_Point}]/gu, "")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\\[nrt]/g, " ")
     .replace(/\\/g, "");
 }
 
