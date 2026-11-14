@@ -1282,7 +1282,7 @@ describe("BatonController", () => {
       const stub = stubPaseo({ createId: "writer-1", history: { "agent-a": [{ type: "user_message", text: "Fix the login bug" }] } });
       await controller.ensureRecovered(stub.paseo as never);
       await waitFor(() => stub.created.length > 0 || options.failUnlink === true);
-      return { controller, io, paseo: stub.paseo, writerReply, archived: stub.archived };
+      return { controller, io, paseo: stub.paseo, writerReply, archived: stub.archived, created: stub.created };
     }
 
     it("stamps the file the writer saved when its reply is only a confirmation", async () => {
@@ -1315,6 +1315,40 @@ describe("BatonController", () => {
       await controller.onTurnEnded({ id: "agent-a", workspaceId: "wks-a", cwd: "/work", parentAgentId: null }, [], paseo as never);
       expect(io.files.get(HANDOFF_PATH)).toContain("# Task");
       await controller.onTurnEnded(writerTurn, [{ type: "assistant_message", text: "I could not do that." }], paseo as never);
+      expect(archived).toEqual([]);
+      await controller.dispose();
+    });
+
+    it("never hands attribution to the continued session, even when the writer saved its file after the handoff settled", async () => {
+      const { controller, io, paseo, archived, created } = await run({}, "Saved.");
+      // The idle agent's turn ends first: no file yet, so Baton settles the handoff with its own draft.
+      await controller.onTurnEnded({ id: "agent-a", workspaceId: "wks-a", cwd: "/work", parentAgentId: null }, [], paseo as never);
+      // Then the writer saves its document, with an invented trailer, and replies with only a confirmation.
+      io.files.set(HANDOFF_PATH, "Title: Fix login\n\n# Task\nFix the login bug\n\n# Constraints\n- Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>\n- Keep the diff small\n");
+      await controller.onTurnEnded(writerTurn, [{ type: "assistant_message", text: "Saved." }], paseo as never);
+      // Not the writer's delivery through the save path, so it is not archived and the file is as the writer left it.
+      expect(archived).toEqual([]);
+      await controller.continue({ agentId: "agent-a", path: HANDOFF_PATH }, paseo as never);
+      const prompt = String(created[created.length - 1].prompt);
+      expect(prompt).toContain("- Keep the diff small");
+      expect(prompt).not.toContain("Co-Authored-By");
+      await controller.dispose();
+    });
+
+    it("does not count Baton's own draft as the writer's delivery when saving the writer's document fails", async () => {
+      const { controller, io, paseo, archived } = await run({}, "unused");
+      await controller.onTurnEnded({ id: "agent-a", workspaceId: "wks-a", cwd: "/work", parentAgentId: null }, [], paseo as never);
+      const write = io.writeFile.bind(io);
+      let failedOnce = false;
+      io.writeFile = async (file: string, text: string) => {
+        if (!failedOnce && file === HANDOFF_PATH) {
+          failedOnce = true;
+          throw new Error("disk full");
+        }
+        return write(file, text);
+      };
+      await controller.onTurnEnded(writerTurn, [{ type: "assistant_message", text: "# Task\nWriter document" }], paseo as never);
+      expect(failedOnce).toBe(true);
       expect(archived).toEqual([]);
       await controller.dispose();
     });

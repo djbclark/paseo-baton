@@ -54,6 +54,28 @@ describe("stripAttributionLines", () => {
     expect(stripAttributionLines(text)).toBe("kept");
   });
 
+  it("drops bold, escaped, spaced, table and assisted-by forms", () => {
+    const text = [
+      "- **Co-Authored-By**: Claude Haiku 5.5 <noreply@anthropic.com>",
+      "Co Authored-By: Claude Haiku 5.5",
+      "Co\\-Authored\\-By: Claude Haiku 5.5",
+      "| Co-Authored-By | Claude Haiku 5.5 |",
+      "Assisted-by: Claude Haiku 5.5",
+      "kept",
+    ].join("\n");
+    expect(stripAttributionLines(text)).toBe("kept");
+  });
+
+  it("takes the value line of a trailer label that has none, but not the next table row", () => {
+    expect(stripAttributionLines("Co-Authored-By:\nClaude Haiku 5.5 <x@y.z>\nkept")).toBe("kept");
+    expect(stripAttributionLines("| Co-Authored-By | Claude |\n| Other | row |")).toBe("| Other | row |");
+  });
+
+  it("keeps a constraint that only talks about trailers", () => {
+    const text = "- Commits must not carry Co-Authored-By: lines; use the session's own\n- Title: Strip Co-authored-by: trailers";
+    expect(stripAttributionLines(text)).toBe(text);
+  });
+
   it("keeps prose that only mentions the words", () => {
     const text = "The draft PR text lists Co-Authored-By lines for two models.\nGenerated with care.";
     expect(stripAttributionLines(text)).toBe(text);

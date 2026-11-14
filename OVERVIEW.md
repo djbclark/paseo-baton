@@ -66,7 +66,7 @@ Settings live under Settings -> Plugins -> Baton. Changes are saved automaticall
   model and effort are used; its mode is ignored. The default, "Same as running agent", uses the idle agent's
   own model and effort. The writer is asked to reply with the document, and Baton also accepts a file the writer
   saved itself. It is a short-lived subagent of the idle agent: it appears under that agent's subagents, Paseo
-  sends no "finished" notification for it, and Baton archives it as soon as its handoff is saved. A writer
+  sends no "finished" notification for it, and Baton archives it as soon as its handoff is saved from its reply or file (if the idle agent's own turn settled the handoff first, it is left in place). A writer
   that saved nothing usable is left in place so you can open it and read what it was given and said. Starting
   the next handoff archives an earlier writer that is still there, and Paseo archives the rest with the idle
   agent. The idle agent's own chat only shows the Handoff saved row.

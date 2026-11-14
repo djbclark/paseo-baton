@@ -734,7 +734,8 @@ export class BatonController {
     if (!entry?.path) throw new Error(NO_HANDOFF_READY);
     let text: string;
     try {
-      text = await this.io.readFile(entry.path);
+      // Stripped here too: a writer can save its file after the handoff settled, which never passes through the save path.
+      text = stripAttributionLines(await this.io.readFile(entry.path));
     } catch {
       throw new Error("The handoff file is missing.");
     }
@@ -1230,7 +1231,7 @@ export class BatonController {
     // file on disk is already the recorded one, the mechanical draft or a file the writer saved, so leave it and do
     // not pass it off as the writer's delivery. A document the writer did send still replaces it.
     if (entry.status === "done" && document === null) return false;
-    const saved = await this.saveHandoffFile(agentId, handoffPath, document, useSavedFile);
+    const saved = await this.saveHandoffFile(agentId, handoffPath, document, useSavedFile && entry.status !== "done");
     const path = saved ? handoffPath : await this.writeMechanical(entry, paseo);
     const done = markDone(entry, path, this.now());
     await this.finishHandoff(agentId, done, paseo);

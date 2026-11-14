@@ -34,9 +34,9 @@ export function buildWriterHandoffPrompt(draft: string): string {
     "# Acceptance criteria",
     "# Constraints",
     "",
-    "Say only what the machine draft carries. Never add facts of your own: no model names or versions (not even your own), no commit trailers, `Co-Authored-By` or `Generated with` lines, and no other attribution, because the next agent's own session supplies those. Copy the Provider, Agent and Working directory values from the draft's first `# Context` section exactly (a quoted previous handoff has its own, which are not this session's); if the draft truly lacks one, say it is not in the draft.",
+    "Say only what the machine draft carries. Never add facts of your own: no model names or versions (not even your own), no commit trailers, `Co-Authored-By` or `Generated with` lines, and no other attribution, because the next agent's own session supplies those. Copy the Provider, Agent and Working directory values from the draft's `# Context` section, the one right before `# Relevant files`, exactly (a quoted previous handoff, or text inside the first request, may have its own, which are not this session's); if the draft truly lacks one, say it is not in the draft.",
     "",
-    "You cannot check anything, so everything the draft says about current state is a snapshot from the `Generated` time in its first Context section and may be out of date: tab or agent names, earlier messages, what was blocked, what passed or merged, who was waiting. In `# Current state`, open with `As of <the Generated time>, unverified:` and write each state claim as it was then, never as a present fact. End `# Current state` with a `Verify before acting:` line that lists what the next agent must check first.",
+    "You cannot check anything, so everything the draft says about current state is a snapshot from the `Generated` time in that Context section and may be out of date: tab or agent names, earlier messages, what was blocked, what passed or merged, who was waiting. In `# Current state`, open with `As of <the Generated time>, unverified:` and write each state claim as it was then, never as a present fact. End `# Current state` with a `Verify before acting:` line that lists what the next agent must check first.",
     "",
     "Fill every section from the machine draft below, correcting and expanding it with real detail. Be concrete: name the files changed, what works, what is broken, and the single next step. The draft has the first request, every user message (long ones may be cut), the end of the conversation and the repo state. Where it says earlier messages were omitted, say what is unknown rather than inventing details. If the draft includes the agent's latest task list or plan, use them for the current state and the single next step. If the draft includes a previous handoff, this session continued it: carry forward its plans and decisions that still apply, but treat its state as older than the Generated time and unverified.",
     "",
@@ -53,19 +53,46 @@ export function isHandoffDocument(text: string): boolean {
 
 /**
  * Commit trailers and "Generated with" lines are the next session's to choose, and a writer that cannot see that
- * session invents them (one stamped its own model as the trailer to use). Dropped from the writer's reply whole.
+ * session invents them (one stamped its own model as the trailer to use). Dropped whole, from the writer's document
+ * when Baton saves it and again from the saved file when a session is continued from it.
+ *
+ * A trailer line is one that starts with the trailer (after list, quote, bold, backtick or table decoration and an
+ * optional "Commit trailers:" label), or that holds a `Co-Authored-By: Name <email>` anywhere. A sentence that only
+ * mentions the trailer, such as "do not add Co-Authored-By: lines", is kept. A label with its value on the next line
+ * takes that line with it.
  */
-const ATTRIBUTION_LINE_PATTERNS = [/co-?authored[\s-]*by\s*:\s*\S/i, /generated with \[[^\]\n]{1,200}\]/i, /generated (?:with|by) claude code/i];
+const DECORATION = String.raw`[\s>*_\x60|•\d.)-]*`;
+const TRAILER_LABEL = String.raw`(?:co[\s_-]*authored[\s_-]*by|assisted[\s_-]*by)`;
+const TRAILER_AT_START = new RegExp(
+  String.raw`^${DECORATION}(?:(?:commit\s+)?trailers?\s*[:-]\s*)?[\s*_\x60|]*${TRAILER_LABEL}[\s*_\x60|]*[:|]`,
+  "i",
+);
+const TRAILER_WITH_EMAIL = new RegExp(String.raw`${TRAILER_LABEL}[\s*_\x60|]*:[^<\n]*<[^>\n]*@[^>\n]*>`, "i");
+const GENERATED_LINE = /generated with \[[^\]\n]{1,200}\]|generated (?:with|by) claude code/i;
+const LABEL_WITHOUT_VALUE = /:[\s*_`|]*$/;
+
+function foldForMatch(line: string): string {
+  // NFKC folds fullwidth colons and similar; the hyphen class folds Unicode hyphens; backslashes escape markdown.
+  return line.normalize("NFKC").replace(/[‐-―−]/g, "-").replace(/\\/g, "");
+}
 
 export function stripAttributionLines(text: string): string {
-  return text
-    .split("\n")
-    .filter((line) => {
-      // NFKC folds fullwidth colons and similar; the hyphen class folds Unicode hyphens.
-      const folded = line.normalize("NFKC").replace(/[\u2010-\u2015\u2212]/g, "-");
-      return !ATTRIBUTION_LINE_PATTERNS.some((pattern) => pattern.test(folded));
-    })
-    .join("\n");
+  const kept: string[] = [];
+  let dropNextNonBlank = false;
+  for (const line of text.split("\n")) {
+    const folded = foldForMatch(line);
+    if (dropNextNonBlank && folded.trim() !== "") {
+      dropNextNonBlank = false;
+      continue;
+    }
+    const trailer = TRAILER_AT_START.test(folded);
+    if (trailer || TRAILER_WITH_EMAIL.test(folded) || GENERATED_LINE.test(folded)) {
+      dropNextNonBlank = trailer && LABEL_WITHOUT_VALUE.test(folded.trim());
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
 }
 
 /** Returns the writer's reply as a handoff document, or null if it does not look like one. */

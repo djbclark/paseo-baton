@@ -23,7 +23,7 @@ Its menu once a handoff exists, with turning handoffs off disabled:
   state, What was tried, Decisions, Acceptance criteria, Constraints).
 - **Writer subagent.** A `[Handoff writer]` subagent of the idle agent drafts the document. It shows under that
   agent's subagents and Paseo does not send a "finished" notification for it. Baton archives it as soon as its
-  handoff is saved. A writer that saved nothing usable is left in place, so you can open it to read what it was given
+  handoff is saved from its reply or file. If the idle agent's own turn settled the handoff first, the writer is left in place. A writer that saved nothing usable is left in place, so you can open it to read what it was given
   and said. Starting the next handoff archives an earlier writer that is still there, and Paseo archives the rest
   with the idle agent.
   The idle agent's own chat only gains a "Handoff saved" row. If the writer fails or saves nothing usable,
