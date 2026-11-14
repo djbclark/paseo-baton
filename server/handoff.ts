@@ -55,7 +55,7 @@ export function isHandoffDocument(text: string): boolean {
  * Commit trailers and "Generated with" lines are the next session's to choose, and a writer that cannot see that
  * session invents them (one stamped its own model as the trailer to use). Dropped from the writer's reply whole.
  */
-const ATTRIBUTION_LINE_PATTERNS = [/co-?authored[\s-]*by\s*:\s*\S/i, /generated with \[[^\]\n]+\]/i, /generated (?:with|by) claude code/i];
+const ATTRIBUTION_LINE_PATTERNS = [/co-?authored[\s-]*by\s*:\s*\S/i, /generated with \[[^\]\n]{1,200}\]/i, /generated (?:with|by) claude code/i];
 
 export function stripAttributionLines(text: string): string {
   return text

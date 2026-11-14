@@ -1226,9 +1226,11 @@ export class BatonController {
       this.markSkippedEntry(agentId);
       return false;
     }
-    // A file under a done entry is one Baton wrote itself (the mechanical draft, when the idle agent's own turn
-    // ended first), so it must not pass for something the writer saved.
-    const saved = await this.saveHandoffFile(agentId, handoffPath, document, useSavedFile && entry.status !== "done");
+    // The handoff was already settled (the idle agent's own turn ended first). With no document from the writer the
+    // file on disk is already the recorded one, the mechanical draft or a file the writer saved, so leave it and do
+    // not pass it off as the writer's delivery. A document the writer did send still replaces it.
+    if (entry.status === "done" && document === null) return false;
+    const saved = await this.saveHandoffFile(agentId, handoffPath, document, useSavedFile);
     const path = saved ? handoffPath : await this.writeMechanical(entry, paseo);
     const done = markDone(entry, path, this.now());
     await this.finishHandoff(agentId, done, paseo);

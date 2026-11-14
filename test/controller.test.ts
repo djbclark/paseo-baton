@@ -1319,6 +1319,17 @@ describe("BatonController", () => {
       await controller.dispose();
     });
 
+    it("keeps the file the writer saved when the idle agent's turn ends first and the writer then replies with only a confirmation", async () => {
+      const { controller, io, paseo } = await run({}, "Saved.");
+      io.files.set(HANDOFF_PATH, "Title: Fix login\n\n# Task\nWRITER TEXT\n");
+      await controller.onTurnEnded({ id: "agent-a", workspaceId: "wks-a", cwd: "/work", parentAgentId: null }, [], paseo as never);
+      expect(io.files.get(HANDOFF_PATH)).toContain("WRITER TEXT");
+      await controller.onTurnEnded(writerTurn, [{ type: "assistant_message", text: "Saved." }], paseo as never);
+      expect(io.files.get(HANDOFF_PATH)).toContain("WRITER TEXT");
+      expect(io.files.get(HANDOFF_PATH)).not.toContain("Generated:");
+      await controller.dispose();
+    });
+
     it("falls back to the summary when an old handoff cannot be cleared, instead of stamping the old one", async () => {
       const { controller, io } = await run({ [HANDOFF_PATH]: "# Task\nOLD STALE HANDOFF\n" }, "unused", { failUnlink: true });
       await waitFor(() => !String(io.files.get(HANDOFF_PATH)).includes("OLD STALE HANDOFF"));
