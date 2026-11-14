@@ -230,8 +230,11 @@ export class BatonController {
       // The writer's own usage shows on its chip, but it never gets a prompt.
       await this.checkThreshold(agent, paseo, { prompt: false });
       const document = timeline.length > 0 ? extractHandoffDocument(timeline) : await this.readWriterDocument(agent.id, paseo);
-      await this.finalizeHandoff(originalAgentId, paseo, document);
+      const delivered = await this.finalizeHandoff(originalAgentId, paseo, document);
       await this.logWriterUsage(originalAgentId, agent.id, paseo);
+      // Archived only once its handoff is saved. A writer that delivered nothing stays, so what it was given and
+      // what it said can still be read, and so a failed delivery is not hidden.
+      if (delivered) await this.archiveAgent(paseo, agent.id);
       return;
     }
     await this.checkThreshold(agent, paseo);
@@ -527,7 +530,7 @@ export class BatonController {
       agentId: entry.agentId,
       workspaceId: entry.workspaceId,
       cwd,
-      provider: null,
+      provider: await this.agentProvider(paseo, entry.agentId),
       timeline: conversation?.items ?? [],
       now: this.now(),
       limits: DETAIL_LIMITS[settings.conversationDetail],
@@ -1132,6 +1135,16 @@ export class BatonController {
     }
   }
 
+  /** The agent's provider from its record, or null when the record cannot be read. */
+  private async agentProvider(paseo: PaseoApi, agentId: string): Promise<string | null> {
+    try {
+      return (await paseo.agents.ref(agentId).refresh())?.agent.provider ?? null;
+    } catch (error: unknown) {
+      this.log(`Reading the provider of ${agentId} failed: ${String(error)}`);
+      return null;
+    }
+  }
+
   private async agentProviderModel(
     paseo: PaseoApi,
     agentId: string,
@@ -1167,7 +1180,7 @@ export class BatonController {
       config: thinkingOptionId ? { provider: providerModel, thinkingOptionId } : { provider: providerModel },
       title: BATON_WRITER_TITLE,
       // Marked as a subagent of the idle agent, so Paseo shows it under that agent, does not notify when it
-      // finishes, and archives it with its parent. It stays after it finishes, so its prompt can be read there.
+      // finishes, and archives it with its parent. Baton archives it itself once its handoff is saved.
       labels: { [BATON_WRITER_LABEL]: "1", [PARENT_AGENT_ID_LABEL]: entry.agentId },
       prompt: buildWriterHandoffPrompt(draft),
     });
@@ -1193,26 +1206,30 @@ export class BatonController {
     }
   }
 
-  /** `useSavedFile` is false when an old file could not be cleared, so it must not pass for the new handoff. */
+  /**
+   * `useSavedFile` is false when an old file could not be cleared, so it must not pass for the new handoff.
+   * True when the handoff file was saved from the writer's reply or file, false when it fell back to the mechanical draft or nothing was written.
+   */
   private async finalizeHandoff(
     agentId: string,
     paseo: PaseoApi,
     document: string | null = null,
     useSavedFile = true,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.clearFallbackTimer(agentId);
     this.pendingHandoff.delete(agentId);
     const entry = this.entries.get(agentId);
-    if (!entry) return;
+    if (!entry) return false;
     const handoffPath = await this.pathForEntry(entry, paseo);
     if (!handoffPath) {
       this.markSkippedEntry(agentId);
-      return;
+      return false;
     }
     const saved = await this.saveHandoffFile(agentId, handoffPath, document, useSavedFile);
     const path = saved ? handoffPath : await this.writeMechanical(entry, paseo);
     const done = markDone(entry, path, this.now());
     await this.finishHandoff(agentId, done, paseo);
+    return saved;
   }
 
   /**

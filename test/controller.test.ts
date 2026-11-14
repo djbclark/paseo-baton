@@ -336,6 +336,35 @@ describe("BatonController", () => {
     await controller.dispose();
   });
 
+  it("leaves a writer in place when it saved nothing usable, and drops invented attribution from one that did", async () => {
+    const run = async (reply: string) => {
+      const io = memoryIo();
+      const controller = makeController(io);
+      const stub = stubPaseo({ createId: "writer-1" });
+      await controller.createNow({ agentId: "agent-a" }, stub.paseo as never);
+      await waitFor(() => stub.calls.includes("create:wks-a"));
+      await controller.onTurnEnded(
+        { id: "writer-1", workspaceId: "wks-a", cwd: "/work", parentAgentId: null },
+        [{ type: "assistant_message", text: reply }],
+        stub.paseo as never,
+      );
+      await controller.dispose();
+      return { io, archived: stub.archived };
+    };
+
+    const delivered = await run(
+      "# Task\nShip it\n\n# Constraints\n- Commit trailers: `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>` on commits\n- Keep the diff small",
+    );
+    expect(delivered.archived).toEqual(["writer-1"]);
+    const saved = delivered.io.files.get(HANDOFF_PATH) ?? "";
+    expect(saved).toContain("- Keep the diff small");
+    expect(saved).not.toContain("Co-Authored-By");
+
+    const empty = await run("I could not do that.");
+    expect(empty.archived).toEqual([]);
+    expect(empty.io.files.get(HANDOFF_PATH)).toContain("# Task");
+  });
+
   it("does not create a handoff now when handoffs are off for the agent", async () => {
     const controller = makeController(memoryIo());
     const { paseo } = stubPaseo();
@@ -1436,8 +1465,11 @@ describe("BatonController", () => {
     expect(created[0].config).toEqual({ provider: "claude/claude-haiku-5-5", thinkingOptionId: "low" });
     // A subagent of the idle agent: Paseo shows it under that agent and sends no finished notification.
     expect(created[0].labels).toEqual({ "baton-writer": "1", "paseo.parent-agent-id": "agent-a" });
-    // The writer stays under the idle agent, so its prompt can be read there.
-    expect(archived).not.toContain("writer-1");
+    // The handoff was saved from its reply, so Baton archives the writer itself.
+    expect(archived).toEqual(["writer-1"]);
+    // The draft it was given carries the idle agent's provider from the agent record, never "unknown".
+    expect(String(created[0].prompt)).toContain("- Provider: claude");
+    expect(String(created[0].prompt)).not.toContain("Provider: unknown");
     expect(logs.some((message) => message.startsWith("Handoff writer for agent-a usage:"))).toBe(true);
     await controller.dispose();
     const state = await batonStateSchema.parseAsync(JSON.parse(io.files.get(STATE_FILE) ?? "{}"));

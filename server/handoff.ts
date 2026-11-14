@@ -13,6 +13,8 @@ export function buildContinuePrompt(handoffPath: string, text: string): string {
     `${CONTINUE_BODY_MARK}${text.trimEnd()}`,
     "</handoff>",
     "",
+    "The handoff is a snapshot from when it was written (see its Created line), and the writer could not check it. Before acting on anything it says about current state, such as tab names, branches, running jobs, blockers or who is waiting for what, check the real state. Do not copy commit trailers or other attribution from it; your own session instructions say what to use.",
+    "",
     "Continue the task it describes.",
   ].join("\n\n");
 }
@@ -32,6 +34,10 @@ export function buildWriterHandoffPrompt(draft: string): string {
     "# Acceptance criteria",
     "# Constraints",
     "",
+    "Say only what the machine draft carries. Never add facts of your own: no model names or versions (not even your own), no commit trailers, `Co-Authored-By` or `Generated with` lines, and no other attribution, because the next agent's own session supplies those. Copy the Provider, Agent and Working directory values from the draft's Context section exactly; if the draft truly lacks one, say it is not in the draft.",
+    "",
+    "You cannot check anything, so everything the draft says about current state is a snapshot from the `Generated` time in its Context section and may be out of date: tab or agent names, earlier messages, what was blocked, what passed or merged, who was waiting. In `# Current state`, open with `As of <the Generated time>, unverified:` and write each state claim as it was then, never as a present fact. End `# Current state` with a `Verify before acting:` line that lists what the next agent must check first.",
+    "",
     "Fill every section from the machine draft below, correcting and expanding it with real detail. Be concrete: name the files changed, what works, what is broken, and the single next step. The draft has the first request, every user message (long ones may be cut), the end of the conversation and the repo state. Where it says earlier messages were omitted, say what is unknown rather than inventing details. If the draft includes the agent's latest task list or plan, use them for the current state and the single next step. If the draft includes a previous handoff, this session continued it: carry forward what still applies from it.",
     "",
     "## Machine draft",
@@ -45,16 +51,30 @@ export function isHandoffDocument(text: string): boolean {
   return /^#\s*Task\s*$/im.test(text);
 }
 
+/**
+ * Commit trailers and "Generated with" lines are the next session's to choose, and a writer that cannot see that
+ * session invents them (one stamped its own model as the trailer to use). Dropped from the writer's reply whole.
+ */
+const ATTRIBUTION_LINE_PATTERNS = [/Co-Authored-By:[^<\n]*<[^>\n]*>/i, /Generated with \[[^\]\n]+\]/i];
+
+export function stripAttributionLines(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !ATTRIBUTION_LINE_PATTERNS.some((pattern) => pattern.test(line)))
+    .join("\n");
+}
+
 /** Returns the writer's reply as a handoff document, or null if it does not look like one. */
 export function extractHandoffDocument(timeline: ReadonlyArray<{ type: string; text?: string }>): string | null {
-  const text = timeline
-    .filter((item) => item.type === "assistant_message" && typeof item.text === "string")
-    .map((item) => item.text)
-    .join("")
-    .trim()
-    .replace(/^```(?:markdown|md)?\s*\n/i, "")
-    .replace(/\n```\s*$/, "")
-    .trim();
+  const text = stripAttributionLines(
+    timeline
+      .filter((item) => item.type === "assistant_message" && typeof item.text === "string")
+      .map((item) => item.text)
+      .join("")
+      .trim()
+      .replace(/^```(?:markdown|md)?\s*\n/i, "")
+      .replace(/\n```\s*$/, ""),
+  ).trim();
   return isHandoffDocument(text) ? `${text}\n` : null;
 }
 

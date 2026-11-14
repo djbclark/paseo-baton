@@ -313,6 +313,8 @@ export function renderMechanicalHandoff(input: MechanicalHandoffInput): string {
     "",
     "# Current state",
     "",
+    `As of ${new Date(input.now).toISOString()}, unverified (the agent's last message, which the next agent must check against the real state before acting):`,
+    "",
     currentState,
     "",
     "# What was tried",
