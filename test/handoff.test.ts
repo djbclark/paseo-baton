@@ -49,6 +49,11 @@ describe("stripAttributionLines", () => {
     expect(stripAttributionLines(text)).toBe("- Keep the diff small\n- Run the tests first");
   });
 
+  it("drops trailers without an email and Unicode look-alikes", () => {
+    const text = ["Co-Authored-By: Claude Haiku 5.5", "Co\u2011authored by: Someone", "Co-Authored-By\uFF1A Someone", "Generated with Claude Code", "kept"].join("\n");
+    expect(stripAttributionLines(text)).toBe("kept");
+  });
+
   it("keeps prose that only mentions the words", () => {
     const text = "The draft PR text lists Co-Authored-By lines for two models.\nGenerated with care.";
     expect(stripAttributionLines(text)).toBe(text);

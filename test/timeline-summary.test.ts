@@ -317,7 +317,10 @@ describe("previousHandoffPath", () => {
       previousHandoff: "# Task\nThe original goal",
     });
     expect(doc).toContain("## Previous handoff");
-    expect(doc).toContain("The original goal");
+    // Quoted, so its own headings are not the draft's: a writer reads one Context and one Current state.
+    expect(doc).toContain("> # Task\n> The original goal");
+    expect(doc).toContain("older than the Generated time");
+    expect(doc.split("\n").filter((line) => line === "# Task")).toHaveLength(1);
   });
 });
 

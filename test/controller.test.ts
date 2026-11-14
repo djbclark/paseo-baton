@@ -1282,7 +1282,7 @@ describe("BatonController", () => {
       const stub = stubPaseo({ createId: "writer-1", history: { "agent-a": [{ type: "user_message", text: "Fix the login bug" }] } });
       await controller.ensureRecovered(stub.paseo as never);
       await waitFor(() => stub.created.length > 0 || options.failUnlink === true);
-      return { controller, io, paseo: stub.paseo, writerReply };
+      return { controller, io, paseo: stub.paseo, writerReply, archived: stub.archived };
     }
 
     it("stamps the file the writer saved when its reply is only a confirmation", async () => {
@@ -1293,6 +1293,29 @@ describe("BatonController", () => {
       expect(io.files.get(HANDOFF_PATH)).toContain("Created: 1970-01-01T00:16:40.000Z");
       expect(io.files.get(HANDOFF_PATH)).toContain("Fix the login bug");
       expect(io.files.get(HANDOFF_PATH)).not.toContain("Generated:");
+      await controller.dispose();
+    });
+
+    it("drops attribution from a file the writer saved itself, and archives that writer", async () => {
+      const { controller, io, paseo, archived } = await run({}, "Saved.");
+      io.files.set(
+        HANDOFF_PATH,
+        "Title: Fix login\n\n# Task\nFix the login bug\n\n# Constraints\n- Co-Authored-By: Claude Haiku 5.5\n- Keep the diff small\n",
+      );
+      await controller.onTurnEnded(writerTurn, [{ type: "assistant_message", text: "Saved." }], paseo as never);
+      expect(io.files.get(HANDOFF_PATH)).toContain("- Keep the diff small");
+      expect(io.files.get(HANDOFF_PATH)).not.toContain("Co-Authored-By");
+      expect(archived).toEqual(["writer-1"]);
+      await controller.dispose();
+    });
+
+    it("does not count its own mechanical draft as the writer's delivery, so a writer that said nothing usable stays", async () => {
+      const { controller, io, paseo, archived } = await run({}, "unused");
+      // The idle agent's own turn ends first, so Baton writes the mechanical draft and marks the handoff done.
+      await controller.onTurnEnded({ id: "agent-a", workspaceId: "wks-a", cwd: "/work", parentAgentId: null }, [], paseo as never);
+      expect(io.files.get(HANDOFF_PATH)).toContain("# Task");
+      await controller.onTurnEnded(writerTurn, [{ type: "assistant_message", text: "I could not do that." }], paseo as never);
+      expect(archived).toEqual([]);
       await controller.dispose();
     });
 

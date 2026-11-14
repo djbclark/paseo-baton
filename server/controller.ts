@@ -40,6 +40,7 @@ import {
   extractTitleFromDocument,
   isHandoffDocument,
   stampHandoffDocument,
+  stripAttributionLines,
 } from "./handoff";
 import {
   ContextStateStore,
@@ -929,7 +930,7 @@ export class BatonController {
       for (const entry of entries) {
         knownAgentIds.add(entry.agent.id);
         // Writers of an earlier version stood alone, and one still running after a restart will not be heard
-        // from again; a finished writer under its parent stays so its prompt can be read.
+        // from again; a finished writer under its parent stays, since only one whose handoff was saved is archived.
         const labels = entry.agent.labels;
         if (labels?.[BATON_WRITER_LABEL] === "1" && (!labels[PARENT_AGENT_ID_LABEL] || entry.agent.status === "running")) {
           void this.archiveAgent(paseo, entry.agent.id);
@@ -1225,7 +1226,9 @@ export class BatonController {
       this.markSkippedEntry(agentId);
       return false;
     }
-    const saved = await this.saveHandoffFile(agentId, handoffPath, document, useSavedFile);
+    // A file under a done entry is one Baton wrote itself (the mechanical draft, when the idle agent's own turn
+    // ended first), so it must not pass for something the writer saved.
+    const saved = await this.saveHandoffFile(agentId, handoffPath, document, useSavedFile && entry.status !== "done");
     const path = saved ? handoffPath : await this.writeMechanical(entry, paseo);
     const done = markDone(entry, path, this.now());
     await this.finishHandoff(agentId, done, paseo);
@@ -1256,7 +1259,8 @@ export class BatonController {
   private async writeStamped(agentId: string, handoffPath: string, text: string): Promise<boolean> {
     try {
       await this.io.mkdir(dirname(handoffPath));
-      await this.io.writeFile(handoffPath, stampHandoffDocument(text, this.now()));
+      // Also the file a writer saved itself, which never passed through extractHandoffDocument.
+      await this.io.writeFile(handoffPath, stampHandoffDocument(stripAttributionLines(text), this.now()));
       return true;
     } catch (error: unknown) {
       this.log(`Writing the handoff for ${agentId} failed: ${String(error)}`);
