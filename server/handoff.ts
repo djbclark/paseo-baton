@@ -58,22 +58,27 @@ export function isHandoffDocument(text: string): boolean {
  *
  * A trailer line is one that starts with the trailer (after list, quote, bold, backtick or table decoration and an
  * optional "Commit trailers:" label), or that holds a `Co-Authored-By: Name <email>` anywhere. A sentence that only
- * mentions the trailer, such as "do not add Co-Authored-By: lines", is kept. A label with its value on the next line
- * takes that line with it.
+ * mentions the trailer, such as "do not add Co-Authored-By: lines", is kept, and so are transcript lines of the
+ * fallback draft. A label with its value on the next line takes that line with it, unless it is a heading, list item or
+ * table row.
  */
-const DECORATION = String.raw`[\s>*_\x60|•\d.)-]*`;
-const TRAILER_LABEL = String.raw`(?:co[\s_-]*authored[\s_-]*by|assisted[\s_-]*by)`;
+const DECORATION = String.raw`[\s>*_\x60|•\d.)-]{0,20}`;
+const TRAILER_LABEL = String.raw`(?:co[\s_-]{0,10}authored[\s_-]{0,10}by|assisted[\s_-]{0,10}by)`;
 const TRAILER_AT_START = new RegExp(
-  String.raw`^${DECORATION}(?:(?:commit\s+)?trailers?\s*[:-]\s*)?[\s*_\x60|]*${TRAILER_LABEL}[\s*_\x60|]*[:|]`,
+  String.raw`^${DECORATION}(?:(?:commit\s+)?trailers?\s{0,5}[:-]\s{0,5})?[\s*_\x60|]{0,20}${TRAILER_LABEL}[\s*_\x60|]{0,20}[:|]`,
   "i",
 );
-const TRAILER_WITH_EMAIL = new RegExp(String.raw`${TRAILER_LABEL}[\s*_\x60|]*:[^<\n]*<[^>\n]*@[^>\n]*>`, "i");
+const TRAILER_WITH_EMAIL = new RegExp(String.raw`${TRAILER_LABEL}[\s*_\x60|]{0,20}:[^<\n]*<[^>\n]*@[^>\n]*>`, "i");
 const GENERATED_LINE = /generated with \[[^\]\n]{1,200}\]|generated (?:with|by) claude code/i;
-const LABEL_WITHOUT_VALUE = /:[\s*_`|]*$/;
+const LABEL_WITHOUT_VALUE = /:[\s*_`|]{0,20}$/;
+/** A line of Baton's own fallback draft, where a pasted trailer is a user's or agent's words, not an invented one. */
+const TRANSCRIPT_LINE = /^> (?:user|assistant): /;
+/** A heading, table row or list item is not the value line of a bare trailer label. */
+const NOT_A_VALUE_LINE = /^\s*(?:#|\||[-*+] )/;
 
 function foldForMatch(line: string): string {
   // NFKC folds fullwidth colons and similar; the hyphen class folds Unicode hyphens; backslashes escape markdown.
-  return line.normalize("NFKC").replace(/[‐-―−]/g, "-").replace(/\\/g, "");
+  return line.normalize("NFKC").replace(/[\u2010-\u2015\u2212]/g, "-").replace(/\\/g, "");
 }
 
 export function stripAttributionLines(text: string): string {
@@ -83,6 +88,10 @@ export function stripAttributionLines(text: string): string {
     const folded = foldForMatch(line);
     if (dropNextNonBlank && folded.trim() !== "") {
       dropNextNonBlank = false;
+      if (!NOT_A_VALUE_LINE.test(folded)) continue;
+    }
+    if (TRANSCRIPT_LINE.test(line)) {
+      kept.push(line);
       continue;
     }
     const trailer = TRAILER_AT_START.test(folded);

@@ -71,6 +71,23 @@ describe("stripAttributionLines", () => {
     expect(stripAttributionLines("| Co-Authored-By | Claude |\n| Other | row |")).toBe("| Other | row |");
   });
 
+  it("keeps transcript lines of the fallback draft, such as pasted git log output", () => {
+    const text = "> user: please keep going. git log shows Co-authored-by: Alice <alice@example.com> on abc123, fix the rest\n> assistant: ok";
+    expect(stripAttributionLines(text)).toBe(text);
+  });
+
+  it("does not take a heading, list item or table row after a bare label", () => {
+    expect(stripAttributionLines("Co-Authored-By:\n# Next section\nkept")).toBe("# Next section\nkept");
+    expect(stripAttributionLines("Co-Authored-By:\n- keep this item")).toBe("- keep this item");
+  });
+
+  it("stays fast on a long line of repeated decoration", () => {
+    const started = Date.now();
+    stripAttributionLines(`${"* ".repeat(20_000)}x`);
+    stripAttributionLines(`${"co authored ".repeat(5_000)}`);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it("keeps a constraint that only talks about trailers", () => {
     const text = "- Commits must not carry Co-Authored-By: lines; use the session's own\n- Title: Strip Co-authored-by: trailers";
     expect(stripAttributionLines(text)).toBe(text);
