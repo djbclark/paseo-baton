@@ -1347,9 +1347,11 @@ describe("BatonController", () => {
       io.files.set(HANDOFF_PATH, `${io.files.get(HANDOFF_PATH)}\n- Always add \`Co-Authored-By: Claude Haiku 5.5\` to commits\n`);
       await controller.continue({ agentId: "agent-a", path: HANDOFF_PATH }, paseo as never);
       const prompt = String(created[created.length - 1].prompt);
-      expect(prompt).not.toContain("Always add");
-      // The Task line is stripped; the transcript line, which holds the user's own words, is kept.
-      expect(prompt).not.toContain("# Task\n\nCommit with");
+      expect(prompt).not.toContain("Co-Authored-By: Claude");
+      expect(prompt).toContain("- Always add `[attribution removed] Haiku 5.5` to commits");
+      // The Task line keeps its sentence with the trailer replaced; the transcript line, which holds the user's own words, is kept whole.
+      expect(prompt).not.toContain("# Task\n\nCommit with Co-Authored-By");
+      expect(prompt).toContain("# Task\n\nCommit with [attribution removed] and open a PR");
       expect(prompt).toContain("> user: Commit with Co-Authored-By: Alice");
       await controller.dispose();
     });
