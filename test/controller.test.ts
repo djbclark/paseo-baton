@@ -1484,6 +1484,25 @@ describe("BatonController", () => {
       expect(prompt).toContain("The ORIGINAL GOAL of the earlier session");
     });
 
+    it("strips an invented trailer from the handoff it was started from before it reaches the draft", async () => {
+      // The draft is passed to the continued session raw (its hash exempts it), so this strip is the only guard.
+      const prompt = await writerPrompt("Read /work/.paseo/handoffs/prev.md and continue the task.", {
+        "/work/.paseo/handoffs/prev.md": [
+          "# Task",
+          "The ORIGINAL GOAL of the earlier session",
+          "",
+          "# Constraints",
+          "Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>",
+          "- Next: grep for co-authored-by: claude in the hooks and remove it",
+          "",
+        ].join("\n"),
+      });
+      expect(prompt).toContain("The ORIGINAL GOAL of the earlier session");
+      expect(prompt).not.toContain("noreply@anthropic.com");
+      expect(prompt).not.toContain("Haiku 5.5");
+      expect(prompt).toContain("- Next: grep for [attribution removed] in the hooks and remove it");
+    });
+
     it("does not follow a relative path or one that steps out of its folder", async () => {
       for (const first of [
         "Read handoffs/prev.md and continue the task.",

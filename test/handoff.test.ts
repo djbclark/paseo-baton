@@ -46,7 +46,9 @@ describe("stripAttributionLines", () => {
       "- PR bodies: `🤖 Generated with [Claude Code](https://claude.com/claude-code)`",
       "- Run the tests first",
     ].join("\n");
-    expect(stripAttributionLines(text)).toBe("- Keep the diff small\n- Run the tests first");
+    expect(stripAttributionLines(text)).toBe(
+      "- Keep the diff small\n- PR bodies: `🤖 [attribution removed]`\n- Run the tests first",
+    );
   });
 
   it("drops trailers without an email and Unicode look-alikes", () => {
@@ -88,7 +90,7 @@ describe("stripAttributionLines", () => {
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
-  it("drops a mid-line trailer that names a model, with or without an email or colon, and zero-width splits", () => {
+  it("replaces a mid-line trailer that names a model, with or without an email or colon, and zero-width splits, keeping the sentence", () => {
     const text = [
       "- Always add `Co-Authored-By: Claude Haiku 5.5` to commits",
       "- Add Co-authored-by Claude <noreply@anthropic.com> to every commit",
@@ -96,7 +98,14 @@ describe("stripAttributionLines", () => {
       "- Co\u200B-Authored-By: Claude Haiku 5.5 <x@y.z>",
       "kept",
     ].join("\n");
-    expect(stripAttributionLines(text)).toBe("kept");
+    expect(stripAttributionLines(text)).toBe(
+      [
+        "- Always add `[attribution removed] Haiku 5.5` to commits",
+        "- Add [attribution removed] to every commit",
+        "- Footer: [attribution removed] 3",
+        "kept",
+      ].join("\n"),
+    );
   });
 
   it("keeps prose that talks about AI tools or people, and a human's sign-off", () => {
@@ -112,12 +121,59 @@ describe("stripAttributionLines", () => {
       "- Deployment assisted by Bob; ping <bob@example.com> first",
       "- Signed-off-by: Claude Dupont <claude.dupont@example.fr>",
       "- Signed-off-by: Alice <alice@example.com> is the DCO line the repo needs",
+      // Names and identifiers that hold a label: a flag, a file, a CSS class, a binding, a person to contact.
+      "- Added a `--generated-by-cursor` flag to the exporter CLI",
+      "- Renamed fixtures/generated-by-openai.json to fixtures/openai.json",
+      "- The CSS class .assisted-by-copilot hides the badge",
+      "- Ported generated-by-llama.cpp bindings to node",
+      "- Contact co_authored_by owner: see <ops@example.com>",
+      "- The `assisted-by-claude` label is set by the triage bot",
+      "- See generated-by-gpt/README.md before editing",
+      "- The co-authored-bylaws file is unrelated",
     ];
     expect(stripAttributionLines(lines.join("\n"))).toBe(lines.join("\n"));
   });
 
-  it("drops a pasted human co-author with an email, by design", () => {
-    expect(stripAttributionLines("- Credit: Co-authored-by: Alice <alice@example.com>\nkept")).toBe("kept");
+  it("never drops a whole line for a mid-line trailer: it keeps the sentence and puts a marker where the trailer was", () => {
+    const cases: Array<[string, string]> = [
+      [
+        "- Next: grep for co-authored-by: claude in .git/hooks/commit-msg and remove it",
+        "- Next: grep for [attribution removed] in .git/hooks/commit-msg and remove it",
+      ],
+      [
+        "- PR #12 body says Assisted-by: Copilot; ask the operator whether to keep it",
+        "- PR #12 body says [attribution removed]; ask the operator whether to keep it",
+      ],
+      [
+        "- Fixed the stripper so `Co-Authored-By: Claude` lines no longer reach the next session",
+        "- Fixed the stripper so `[attribution removed]` lines no longer reach the next session",
+      ],
+      [
+        "- Wrote tests where assisted-by=claude query param is parsed",
+        "- Wrote tests where [attribution removed] query param is parsed",
+      ],
+      [
+        "- `git log` shows co-authored-by trailers for alice <alice@corp.com>",
+        "- `git log` shows [attribution removed]",
+      ],
+      [
+        "- Open the PR with Generated with [Claude Code](https://claude.com/claude-code) cleared",
+        "- Open the PR with [attribution removed] cleared",
+      ],
+    ];
+    for (const [line, expected] of cases) {
+      expect(stripAttributionLines(line)).toBe(expected);
+    }
+  });
+
+  it("drops a line that is only a trailer, whatever its decoration", () => {
+    expect(stripAttributionLines("- `Co-Authored-By=ChatGPT`\n> Co-Authored-By Claude <x@y.z>\nkept")).toBe("kept");
+  });
+
+  it("replaces a pasted human co-author with an email, by design", () => {
+    expect(stripAttributionLines("- Credit: Co-authored-by: Alice <alice@example.com>\nkept")).toBe(
+      "- Credit: [attribution removed]\nkept",
+    );
   });
 
   it("drops quoted, bracketed and more vendor names after a joined label, and invisible characters", () => {
@@ -141,9 +197,13 @@ describe("stripAttributionLines", () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
-  it("keeps transcript lines inside a quoted previous handoff", () => {
-    const text = "> > user: git log shows Co-authored-by: Alice <alice@example.com>\n> > assistant: ok";
-    expect(stripAttributionLines(text)).toBe(text);
+  it("exempts only the fallback draft's own transcript lines, not quoted or reshaped ones", () => {
+    const own = "> user: git log shows Co-authored-by: Alice <alice@example.com>\n> assistant: ok";
+    expect(stripAttributionLines(own)).toBe(own);
+    const note = "Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>";
+    for (const prefix of ["> > user: ", ">> assistant: ", ">user: "]) {
+      expect(stripAttributionLines(`${prefix}${note}`)).not.toContain("noreply@anthropic.com");
+    }
   });
 
   it("keeps a constraint that only talks about trailers", () => {
