@@ -81,6 +81,10 @@ export interface BatonControllerDeps {
   openFile?: (filePath: string) => Promise<void>;
 }
 
+function stripAttributionLinesIfAny(text: string | undefined): string | undefined {
+  return text === undefined ? undefined : stripAttributionLines(text);
+}
+
 function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
@@ -547,7 +551,8 @@ export class BatonController {
       now: this.now(),
       limits: DETAIL_LIMITS[settings.conversationDetail],
       historyCut: conversation?.cut ?? false,
-      previousHandoff: await this.readPreviousHandoff(conversation?.items ?? []),
+      // Stripped here: the draft's hash exempts it when continuing, so an earlier file a writer touched must not ride in.
+      previousHandoff: stripAttributionLinesIfAny(await this.readPreviousHandoff(conversation?.items ?? [])),
       repoFacts: settings.includeRepoState ? await gatherRepoFacts(cwd) : "",
     });
     this.log(`Handoff draft for ${entry.agentId} is ${draft.length} characters`);

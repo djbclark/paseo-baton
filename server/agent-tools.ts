@@ -76,13 +76,13 @@ export function batonAgentTools(readSettings: () => Promise<ReadToolSettings>): 
           if (!full) return { isError: true, text: "That is not a handoff file for this workspace." };
           let text: string;
           try {
-            // Stripped as a continued session's prompt is: a writer may save its file after the handoff settled.
-            text = stripAttributionLines(await fs.readFile(full, "utf8"));
+            text = await fs.readFile(full, "utf8");
           } catch {
             return { isError: true, text: "That handoff no longer exists." };
           }
-          if (text.length <= MAX_READ_CHARS) return { text };
-          return { text: `${text.slice(0, MAX_READ_CHARS)}\n\n[Truncated: showing the first ${MAX_READ_CHARS} characters.]` };
+          // Cut first, then stripped as a continued session's prompt is: a writer may save its file after the handoff settled.
+          if (text.length <= MAX_READ_CHARS) return { text: stripAttributionLines(text) };
+          return { text: `${stripAttributionLines(text.slice(0, MAX_READ_CHARS))}\n\n[Truncated: showing the first ${MAX_READ_CHARS} characters.]` };
         });
       },
     }),

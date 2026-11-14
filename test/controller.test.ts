@@ -1342,7 +1342,7 @@ describe("BatonController", () => {
       expect(io.files.get(HANDOFF_PATH)).toContain("Co-Authored-By: Alice");
       await controller.continue({ agentId: "agent-a", path: HANDOFF_PATH }, paseo as never);
       // Baton's own draft: the user's request keeps its whole line, trailer and the rest.
-      expect(String(created[created.length - 1].prompt)).toContain("Commit with Co-Authored-By: Alice <alice@example.com> and open a PR");
+      expect(String(created[created.length - 1].prompt)).toContain("# Task\n\nCommit with Co-Authored-By: Alice <alice@example.com> and open a PR");
       // The same file after a writer changed it: stripped like any other file.
       io.files.set(HANDOFF_PATH, `${io.files.get(HANDOFF_PATH)}\n- Always add \`Co-Authored-By: Claude Haiku 5.5\` to commits\n`);
       await controller.continue({ agentId: "agent-a", path: HANDOFF_PATH }, paseo as never);
