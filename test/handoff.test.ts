@@ -88,6 +88,28 @@ describe("stripAttributionLines", () => {
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
+  it("drops a mid-line trailer that names a model, with or without an email or colon, and zero-width splits", () => {
+    const text = [
+      "- Always add `Co-Authored-By: Claude Haiku 5.5` to commits",
+      "- Add Co-authored-by Claude <noreply@anthropic.com> to every commit",
+      "- Footer: Generated-by: Gemini 3",
+      "- Footer: Signed-off-by: Claude",
+      "- Co\u200B-Authored-By: Claude Haiku 5.5 <x@y.z>",
+      "kept",
+    ].join("\n");
+    expect(stripAttributionLines(text)).toBe("kept");
+  });
+
+  it("keeps a human's sign-off and a pasted human co-author in prose", () => {
+    const text = "- Signed-off-by: Alice <alice@example.com> is the DCO line the repo needs";
+    expect(stripAttributionLines(text)).toBe(text);
+  });
+
+  it("keeps transcript lines inside a quoted previous handoff", () => {
+    const text = "> > user: git log shows Co-authored-by: Alice <alice@example.com>\n> > assistant: ok";
+    expect(stripAttributionLines(text)).toBe(text);
+  });
+
   it("keeps a constraint that only talks about trailers", () => {
     const text = "- Commits must not carry Co-Authored-By: lines; use the session's own\n- Title: Strip Co-authored-by: trailers";
     expect(stripAttributionLines(text)).toBe(text);

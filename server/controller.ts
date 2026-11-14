@@ -2,6 +2,7 @@ import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import type { PluginHandlerContext, PluginSettings } from "@getpaseo/plugin/server";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import path, { dirname } from "node:path";
 import { promisify } from "node:util";
 import type { BatonEntry, BatonRowData, BatonState, BatonSettings, ContextUsageReading, HandoffInfo } from "../shared/baton";
@@ -78,6 +79,10 @@ export interface BatonControllerDeps {
   io?: BatonStoreIo;
   now?: () => number;
   openFile?: (filePath: string) => Promise<void>;
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function buildProviderModel(provider: string, model: string | null): string {
@@ -165,6 +170,8 @@ export class BatonController {
   private lastTimeline = new Map<string, { items: readonly AgentTimelineItem[]; cut: boolean }>();
   private workspaceDirCache = new Map<string, string | null>();
   private writerAgentIds = new Set<string>();
+  /** Hash of the mechanical draft Baton wrote at each handoff path, so continuing can tell it from a file a writer saved. */
+  private mechanicalDraftHashes = new Map<string, string>();
   private pathNotices = new Map<string, string>();
   private writerByAgentId = new Map<string, string>();
   private housekeepingTimer: ReturnType<typeof setInterval> | null = null;
@@ -739,7 +746,10 @@ export class BatonController {
     let text: string;
     try {
       // Stripped here too: a writer can save its file after the handoff settled, which never passes through the save path.
-      text = stripAttributionLines(await this.io.readFile(entry.path));
+      const raw = await this.io.readFile(entry.path);
+      // Baton's own draft holds the user's and agent's words, and a pasted trailer there is theirs, so it is kept. Any other
+      // file, including one a writer saved or changed after the draft was written, is stripped.
+      text = this.mechanicalDraftHashes.get(entry.path) === sha256(raw) ? raw : stripAttributionLines(raw);
     } catch {
       throw new Error("The handoff file is missing.");
     }
@@ -1281,6 +1291,7 @@ export class BatonController {
     await this.io.mkdir(path.dirname(handoffPath));
     const content = await this.buildDraft(entry, handoffPath, paseo, await this.readSettings());
     await this.io.writeFile(handoffPath, content);
+    this.mechanicalDraftHashes.set(handoffPath, sha256(content));
     return handoffPath;
   }
 

@@ -1251,7 +1251,7 @@ describe("BatonController", () => {
   describe("a writer that saves the file itself", () => {
     const writerTurn = { id: "writer-1", workspaceId: "wks-a", cwd: "/work", parentAgentId: null };
 
-    async function run(files: Record<string, string>, writerReply: string, options: { failUnlink?: boolean } = {}) {
+    async function run(files: Record<string, string>, writerReply: string, options: { failUnlink?: boolean; firstMessage?: string } = {}) {
       const io = memoryIo({
               [STATE_FILE]: JSON.stringify({
                 "agent-a": {
@@ -1279,7 +1279,7 @@ describe("BatonController", () => {
         io,
         now: () => NOW,
       });
-      const stub = stubPaseo({ createId: "writer-1", history: { "agent-a": [{ type: "user_message", text: "Fix the login bug" }] } });
+      const stub = stubPaseo({ createId: "writer-1", history: { "agent-a": [{ type: "user_message", text: options.firstMessage ?? "Fix the login bug" }] } });
       await controller.ensureRecovered(stub.paseo as never);
       await waitFor(() => stub.created.length > 0 || options.failUnlink === true);
       return { controller, io, paseo: stub.paseo, writerReply, archived: stub.archived, created: stub.created };
@@ -1332,6 +1332,25 @@ describe("BatonController", () => {
       const prompt = String(created[created.length - 1].prompt);
       expect(prompt).toContain("- Keep the diff small");
       expect(prompt).not.toContain("Co-Authored-By");
+      await controller.dispose();
+    });
+
+    it("keeps the words in Baton's own draft when continuing, but strips a file changed after the draft was written", async () => {
+      const firstMessage = "Commit with Co-Authored-By: Alice <alice@example.com> and open a PR";
+      const { controller, io, paseo, created } = await run({}, "unused", { firstMessage });
+      await controller.onTurnEnded({ id: "agent-a", workspaceId: "wks-a", cwd: "/work", parentAgentId: null }, [], paseo as never);
+      expect(io.files.get(HANDOFF_PATH)).toContain("Co-Authored-By: Alice");
+      await controller.continue({ agentId: "agent-a", path: HANDOFF_PATH }, paseo as never);
+      // Baton's own draft: the user's request keeps its whole line, trailer and the rest.
+      expect(String(created[created.length - 1].prompt)).toContain("Commit with Co-Authored-By: Alice <alice@example.com> and open a PR");
+      // The same file after a writer changed it: stripped like any other file.
+      io.files.set(HANDOFF_PATH, `${io.files.get(HANDOFF_PATH)}\n- Always add \`Co-Authored-By: Claude Haiku 5.5\` to commits\n`);
+      await controller.continue({ agentId: "agent-a", path: HANDOFF_PATH }, paseo as never);
+      const prompt = String(created[created.length - 1].prompt);
+      expect(prompt).not.toContain("Always add");
+      // The Task line is stripped; the transcript line, which holds the user's own words, is kept.
+      expect(prompt).not.toContain("# Task\n\nCommit with");
+      expect(prompt).toContain("> user: Commit with Co-Authored-By: Alice");
       await controller.dispose();
     });
 

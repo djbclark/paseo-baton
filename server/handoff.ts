@@ -57,7 +57,7 @@ export function isHandoffDocument(text: string): boolean {
  * when Baton saves it and again from the saved file when a session is continued from it.
  *
  * A trailer line is one that starts with the trailer (after list, quote, bold, backtick or table decoration and an
- * optional "Commit trailers:" label), or that holds a `Co-Authored-By: Name <email>` anywhere. A sentence that only
+ * optional "Commit trailers:" label), or that holds a `Co-Authored-By: Name <email>`, or an attribution trailer that names a model or vendor, anywhere. A sentence that only
  * mentions the trailer, such as "do not add Co-Authored-By: lines", is kept, and so are transcript lines of the
  * fallback draft. A label with its value on the next line takes that line with it, unless it is a heading, list item or
  * table row.
@@ -68,17 +68,26 @@ const TRAILER_AT_START = new RegExp(
   String.raw`^${DECORATION}(?:(?:commit\s+)?trailers?\s{0,5}[:-]\s{0,5})?[\s*_\x60|]{0,20}${TRAILER_LABEL}[\s*_\x60|]{0,20}[:|]`,
   "i",
 );
-const TRAILER_WITH_EMAIL = new RegExp(String.raw`${TRAILER_LABEL}[\s*_\x60|]{0,20}:[^<\n]*<[^>\n]*@[^>\n]*>`, "i");
+const TRAILER_WITH_EMAIL = new RegExp(String.raw`${TRAILER_LABEL}[\s*_\x60|]{0,20}:?[^<\n]*<[^>\n]*@[^>\n]*>`, "i");
+/** An attribution trailer naming a model or vendor, anywhere in a line, with or without an email: the invented form. */
+const TRAILER_NAMING_A_MODEL = new RegExp(
+  String.raw`(?:co[\s_-]{0,10}authored|assisted|generated|signed[\s_-]{0,10}off)[\s_-]{0,10}by[\s*_\x60|]{0,20}:?\s{0,5}(?:claude|anthropic|haiku|sonnet|opus|fable|gemini|gpt|openai|codex|copilot|cursor|grok|an?\s+ai\b)`,
+  "i",
+);
 const GENERATED_LINE = /generated with \[[^\]\n]{1,200}\]|generated (?:with|by) claude code/i;
 const LABEL_WITHOUT_VALUE = /:[\s*_`|]{0,20}$/;
-/** A line of Baton's own fallback draft, where a pasted trailer is a user's or agent's words, not an invented one. */
-const TRANSCRIPT_LINE = /^> (?:user|assistant): /;
+/** A line of Baton's own fallback draft (also inside a quoted previous handoff), where a pasted trailer is a user's or agent's words, not an invented one. */
+const TRANSCRIPT_LINE = /^(?:>\s*)+(?:user|assistant): /;
 /** A heading, table row or list item is not the value line of a bare trailer label. */
 const NOT_A_VALUE_LINE = /^\s*(?:#|\||[-*+] )/;
 
 function foldForMatch(line: string): string {
   // NFKC folds fullwidth colons and similar; the hyphen class folds Unicode hyphens; backslashes escape markdown.
-  return line.normalize("NFKC").replace(/[\u2010-\u2015\u2212]/g, "-").replace(/\\/g, "");
+  return line
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, "")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\\/g, "");
 }
 
 export function stripAttributionLines(text: string): string {
@@ -95,7 +104,7 @@ export function stripAttributionLines(text: string): string {
       continue;
     }
     const trailer = TRAILER_AT_START.test(folded);
-    if (trailer || TRAILER_WITH_EMAIL.test(folded) || GENERATED_LINE.test(folded)) {
+    if (trailer || TRAILER_WITH_EMAIL.test(folded) || TRAILER_NAMING_A_MODEL.test(folded) || GENERATED_LINE.test(folded)) {
       dropNextNonBlank = trailer && LABEL_WITHOUT_VALUE.test(folded.trim());
       continue;
     }

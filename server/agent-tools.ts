@@ -3,6 +3,7 @@ import path from "node:path";
 import { defineAgentTool, type AgentToolDefinition, type AgentToolResult, type PluginSessionOpenRequest } from "@getpaseo/plugin/server";
 import { z } from "zod";
 import { BATON_WRITER_LABEL, type BatonSettings } from "../shared/baton";
+import { stripAttributionLines } from "./handoff";
 import { handoffDirFor, handoffPathForName, isHandoffFileName } from "./paths";
 
 /** Longest handoff returned to an agent, so one read cannot flood its context. */
@@ -75,7 +76,8 @@ export function batonAgentTools(readSettings: () => Promise<ReadToolSettings>): 
           if (!full) return { isError: true, text: "That is not a handoff file for this workspace." };
           let text: string;
           try {
-            text = await fs.readFile(full, "utf8");
+            // Stripped as a continued session's prompt is: a writer may save its file after the handoff settled.
+            text = stripAttributionLines(await fs.readFile(full, "utf8"));
           } catch {
             return { isError: true, text: "That handoff no longer exists." };
           }
